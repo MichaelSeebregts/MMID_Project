@@ -686,8 +686,6 @@ run_model <- function(parameters, scenario) {
                    parms=parameters, 
                    input=inp, scenario=scenario)
   
-  return(staterun)
-  
   # Compute transitions at each time step
   print("before tranoderun")
   print(timesrun)
@@ -708,8 +706,12 @@ run_model <- function(parameters, scenario) {
   
   MALout<-list(as.data.table(inc_pred_ode), #2
                outoderun #3
-               
   )
+  
+  # state_names <- c()
+  # for (n in 1:N) state_names <- c(state_names, paste0(var_names, "_p", n))
+  # colnames(outoderun) <- c("time", state_names)
+  # return(outoderun)
   
   return(MALout)
 }
@@ -725,4 +727,18 @@ tryCatch({
   traceback()
 })
 
-print(mo)
+
+col_idx <- function(vname, patch) {
+  j <- match(vname, var_names)     # e.g., vname = "S_ch"
+  if (is.na(j)) stop("Unknown variable name: ", vname)
+  1 + varind[j, patch]             # +1 for the time column
+}
+
+# vector of that variable over time
+get_series <- function(out, vname, patch) {
+  out[, col_idx(vname, patch), drop = TRUE]
+}
+
+
+
+S_ch_p5 <- get_series(mo[[2]], "S_ch", 5)
