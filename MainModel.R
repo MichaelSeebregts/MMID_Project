@@ -53,8 +53,8 @@ L = N*A
 
 startyear = 2022 # starting year of simulation 2022-01-01
 
-tyears = 1 # total weeks of simulation 
-dtout = 7/365 # output timestep
+tyears = 1 # total Years of simulation 
+dtout = 1/52 # output timestep
 tsteps = round(tyears/dtout) # number of time steps
 time = startyear+seq(0, tyears, dtout) # time vector
 
@@ -383,7 +383,7 @@ get_comp_vecs <- function(names, suffix, env = parent.frame()) {
   sapply(names, function(nm) rlang::eval_tidy(rlang::sym(paste0(nm, "_", suffix)), env = env))
 }
 
-malrates <- function(x, input, parameters, matrix, t, ti, scenario) {
+malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
   with(as.list(c(parameters, scenario, getStates(x))), {
     
     lambda_V = 0.8
@@ -629,7 +629,19 @@ epiModel <- function(t, state, parameters, input, scenario) {
     # rates of change
     ti <- 1
     transit <- malrates(state, input, parameters, migrationMatrix, t, ti, scenario)
+    if (any(!is.finite(transit))) {
+      bad <- which(!is.finite(transit))[1]
+      stop(sprintf("non-finite transit at t=%.6f (index %d)", t, bad), call. = FALSE)
+    }
+    
     EQ(dZ, transit, transitionsiu1, transitionsiu2, transitionsiv1, transitionsiv2)
+    
+    if (any(!is.finite(dZ))) {
+      bad <- which(!is.finite(dZ))[1]
+      stop(sprintf("non-finite dZ at t=%.6f (index %d)", t, bad), call. = FALSE)
+    }
+    
+    list(c(dZ))
     # return the rate of change
     # print(c(t, dZ))
     # browser()
@@ -673,14 +685,22 @@ run_model <- function(parameters, scenario) {
   outoderun <- ode(y=staterun, times=timesrun, func=epiModel, 
                    parms=parameters, 
                    input=inp, scenario=scenario)
+  
+  return(staterun)
+  
   # Compute transitions at each time step
   print("before tranoderun")
-  tranoderun<-matrix(0,nrow=length(outoderun[,1]),ncol=length(transitions))
+  print(timesrun)
+  print(dim(outoderun))
+  tranoderun<-matrix(0,nrow=dim(outoderun)[1],ncol=length(transitions))
+  print(dim(tranoderun))
   for (ti in 1:(tsteps+1)){
+    print(ti)
     tranoderun[ti,]<-t(malrates(outoderun[ti,2:(1+V)],inp,parameters,migrationMatrix, 0,ti,scenario ))
   }
   #Compute outputs
   ppout<-postproc(parameters,outoderun,tranoderun)
+  
   modeltimes<-outoderun[,1]+startyear
   
   inc_pred_ode<-ppout[,1:N]
@@ -705,3 +725,4 @@ tryCatch({
   traceback()
 })
 
+print(mo)
