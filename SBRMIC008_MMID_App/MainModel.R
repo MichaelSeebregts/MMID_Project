@@ -1,4 +1,3 @@
-library(deSolve)
 
 pacman::p_load(tidyverse, 
                deSolve, 
@@ -12,29 +11,56 @@ pacman::p_load(tidyverse,
 )
 
 cppFunction('
-  void EQ(NumericVector eq, NumericVector transit, 
-          IntegerVector transitionsiu1, IntegerVector transitionsiu2, 
-          IntegerVector transitionsiv1, IntegerVector transitionsiv2) {
-    int i, iu1, iu2, iv1, iv2;
-    // Zero out eq
-    eq.fill(0.0);
-    // Fill equations with new deltas
-    //Rcpp::Rcout << transit.length() << std::endl;
-    for(i=0; i<transit.length(); i++) {
-      iu1 = transitionsiu1[i]-1;
-      iv1 = transitionsiv1[i];
-      iu2 = transitionsiu2[i]-1;
-      iv2 = transitionsiv2[i];
-      
-      // Include transition differential in the relevant eq components
-      
-      eq[iu1] += transit[i]*iv1;
-      eq[iu2] += transit[i]*iv2;
-      
-      //Rcpp::Rcout << "eq["<<iu1<<"] += "<<transit[i]<<"*"<<iv1<<";" << std::endl;
-      //Rcpp::Rcout << "eq["<<iu2<<"] += "<<transit[i]<<"*"<<iv2<<";" << std::endl;
+#include <Rcpp.h>
+#ifdef _OPENMP
+  #include <omp.h>
+#endif
+using namespace Rcpp;
+
+// [[Rcpp::plugins(openmp)]]
+// [[Rcpp::export]]
+NumericVector EQ_omp(const NumericVector transit,
+                     const IntegerVector iu1,
+                     const IntegerVector iu2,
+                     const IntegerVector iv1,
+                     const IntegerVector iv2,
+                     const int neq) {
+
+  const int n = transit.size();
+  int nthreads = 1;
+  #ifdef _OPENMP
+    nthreads = omp_get_max_threads();
+  #endif
+
+  // thread-local accumulators: nthreads x neq
+  std::vector<std::vector<double>> local(nthreads, std::vector<double>(neq, 0.0));
+
+  #pragma omp parallel
+  {
+    int tid = 0;
+    #ifdef _OPENMP
+      tid = omp_get_thread_num();
+    #endif
+    std::vector<double> &acc = local[tid];
+
+    #pragma omp for schedule(static)
+    for (int i = 0; i < n; ++i) {
+      const int j1 = iu1[i] - 1;
+      const int j2 = iu2[i] - 1;
+      const double v = transit[i];
+      acc[j1] += v * iv1[i];
+      acc[j2] += v * iv2[i];
     }
   }
+
+  // reduce to a single output vector
+  NumericVector out(neq);
+  for (int t = 0; t < nthreads; ++t)
+    for (int k = 0; k < neq; ++k)
+      out[k] += local[t][k];
+
+  return out;
+}
 ')
 
 
@@ -42,7 +68,7 @@ N = 12
 B = 22 + 21*3 + 5  # number of variables per patch
 A = 38  + # Transitions for Child
     36*3 + # Transitions for Men, Non Pregnant Women and Pregnant Women
-    ((22 + 21*3)*(N-1)) + # Migration 
+    ((22 + 21*3)*(N)) + # Migration 
     (22 + 21*3) + # Deaths
     (21 + 21 + 21*2) + # Aging for children and women moving from not pregnant to pregnant 
     (6)*4 + # Death when infected with vivax or falciparum 
@@ -53,7 +79,7 @@ L = N*A
 
 startyear = 2022 # starting year of simulation 2022-01-01
 
-tyears = 1 # total Years of simulation 
+tyears = 15 # total Years of simulation 
 dtout = 1/52 # output timestep
 tsteps = round(tyears/dtout) # number of time steps
 time = startyear+seq(0, tyears, dtout) # time vector
@@ -110,7 +136,7 @@ transitions = matrix(0, nrow=L, ncol=4)
 for (n in 1:N) {
   indAdd = 0
   
-  migrationVector = c(1:12)[-n]
+  migrationVector = c(1:12)
   
   # Birth
   transitions[traind[1 + indAdd,n],] <- c(varind[1,n],  0, varind[1,n], +1) #    -> IT
@@ -120,7 +146,7 @@ for (n in 1:N) {
   transitions[traind[2 + indAdd,n],] <- c(varind[1,n],  -1, varind[2,n], +1) #  IT  -> S
   indAdd = indAdd + 1
   
-  print("immunity Done")
+
   
   # Death
   for (i in 1:B)
@@ -130,7 +156,7 @@ for (n in 1:N) {
   indAdd = indAdd + B
   print(indAdd)
   
-  print("death Done")
+
   
   # Vivax 
   
@@ -163,8 +189,7 @@ for (n in 1:N) {
       transitions[traind[22 + indAdd, n],] <- c(varind[3,n], +1, varind[2,n], -1)
       
       indAdd = indAdd + 22
-      print(indAdd)
-      
+
     }
     
     if (j > 1)
@@ -192,13 +217,11 @@ for (n in 1:N) {
       transitions[traind[21 + indAdd, n],] <- c(varind[1 + 22*(j-1), n],  +1, varind[12 + 22*(j-1), n], -1)
       transitions[traind[22 + indAdd, n],] <- c(varind[2 + 22*(j-1), n],  +1, varind[1 + 22*(j-1), n], -1)
       indAdd = indAdd + 22
-      print(indAdd)
+
     }
     
   }
-  print(indAdd)
-  
-  print("vivax Done")
+
   # Falciparum
   
   for (j in 1:4)
@@ -207,7 +230,7 @@ for (n in 1:N) {
 
     if (j == 1)
     {
-      print(indAdd)
+
       transitions[traind[1 + indAdd, n],] <- c(varind[14, n],  +1, varind[2, n],  -1)
       transitions[traind[2 + indAdd, n],] <- c(varind[15, n],  +1, varind[14, n], -1)
       transitions[traind[3 + indAdd, n],] <- c(varind[16, n],  +1, varind[14, n], -1)
@@ -248,8 +271,7 @@ for (n in 1:N) {
       indAdd = indAdd + 14
     }
   }
-  print("falciparum Done")
-  print(indAdd)
+
   # Aging
   
   k = 1
@@ -260,8 +282,7 @@ for (n in 1:N) {
     indAdd = indAdd + 1
     k = k + 1
   }
-  
-  print(indAdd)
+
   k = 1
   for (i in 44:64)
   {
@@ -269,11 +290,11 @@ for (n in 1:N) {
     indAdd = indAdd + 1
     k = k + 1
   }
-  print(indAdd)
-  print("aging Done")
+
+
   
   # Pregnancy
-  print(indAdd)
+
   k = 1
   for (i in 44:64)
   {
@@ -282,7 +303,7 @@ for (n in 1:N) {
     k = k + 1
   }
   
-  print(indAdd)
+
   k = 1
 
   for (i in 65:85)
@@ -292,12 +313,12 @@ for (n in 1:N) {
     k = k + 1
   }
   
-  print("pregnancy Done")
+
   
   # Migration
-  print(indAdd)
+
   k = 1
-  for (z in 1:11)
+  for (z in 1:N)
   {
     for (i in 1:(B-5))
     {
@@ -308,10 +329,10 @@ for (n in 1:N) {
     
   }
   
-  print("migration Done")
+
   
   # Deaths from Vivax and Falciparum
-  print(indAdd)
+
   transitions[traind[1 + indAdd,n],] <- c(varind[4,n],  -1, varind[1,n], 0)
   transitions[traind[2 + indAdd,n],] <- c(varind[5,n],  -1, varind[1,n], 0)
   transitions[traind[3 + indAdd,n],] <- c(varind[7,n],  -1, varind[1,n], 0)
@@ -340,7 +361,6 @@ for (n in 1:N) {
   transitions[traind[23 + indAdd,n],] <- c(varind[80,n],  -1, varind[1,n], 0)
   transitions[traind[24 + indAdd,n],] <- c(varind[82,n],  -1, varind[1,n], 0)
   
-  print("Death from Vivax and Falciparum Done")
   
   # Mosquito
   
@@ -353,10 +373,7 @@ for (n in 1:N) {
   transitions[traind[28 + indAdd,n],] <- c(varind[87,n],  -1, varind[88,n], 1) # Ev -> Iv
   transitions[traind[29 + indAdd,n],] <- c(varind[89,n],  -1, varind[90,n], 1) # Ef -> If
   
-  print(indAdd + 29)
   
-  print("Mosquitos Done")
-    
   
 }
 
@@ -369,10 +386,11 @@ inputs<-function(parameters, scenario){
   
 }
 
-parsHuman = readxl::read_excel("Parameters.xlsx", sheet = "Humans") %>% 
+parsHuman = readxl::read_excel("SBRMIC008_MMID_App/Parameters.xlsx", sheet = "Humans") %>% 
   pull(var=Value, name=Name)
-migrationMatrix = readxl::read_excel("Parameters.xlsx", sheet = "migrationMatrix")
-parsMosquito = readxl::read_excel("Parameters.xlsx", sheet = "Mosquitos") %>% 
+migrationMatrix = readxl::read_excel("SBRMIC008_MMID_App/Parameters.xlsx", sheet = "migrationMatrix")
+migrationMatrix = migrationMatrix[, 2:ncol(migrationMatrix)]
+parsMosquito = readxl::read_excel("SBRMIC008_MMID_App/Parameters.xlsx", sheet = "Mosquitos") %>% 
   pull(var=Value, name=Name)
 
 parameters = c(parsHuman, parsMosquito)
@@ -384,43 +402,76 @@ get_comp_vecs <- function(names, suffix, env = parent.frame()) {
 }
 
 malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
-  with(as.list(c(parameters, scenario, getStates(x))), {
+  
+  pars <- as.list(parameters)
+  
+
+  pars[names(scenario)] <- scenario
+
+  dat <- c(pars, getStates(x))
+  #data_for_with <- c(as.list(parameters), getStates(x), scenario)
+  with(dat, {
     
-    lambda_V = 0.8
-    lambda_F = 0.8
-    lambda_v_ch = 0
-    lambda_F_ch = 0
-    lambda_v_wp = 0 
-    lambda_F_wp = 0 
+    lambda_v = beta_Mos*(Iv_Mo/.popMos)*beta_BN*pBN
+    
+    lambda_F = beta_Mos*(IF_Mo/.popMos)*beta_BN*pBN
+    
+    totalAsymptomatic_v = Av_ch + Av_m + Av_wp + Av_wnp
+    totalI_v_RDT_TP = Iv_RDT_TP_ch + Iv_RDT_TP_m + Iv_RDT_TP_wp + Iv_RDT_TP_wnp
+    totalI_v_RDT_FN = Iv_RDT_FN_ch + Iv_RDT_FN_m + Iv_RDT_FN_wp + Iv_RDT_FN_wnp
+    totalI_v_M_TP = Iv_M_TP_ch + Iv_M_TP_m + Iv_M_TP_wp + Iv_M_TP_wnp
+    totalI_v_M_FN = Iv_M_FN_ch + Iv_M_FN_m + Iv_M_FN_wp + Iv_M_FN_wnp
+    
+    totalVivax = totalAsymptomatic_v + totalI_v_RDT_TP + totalI_v_RDT_FN + totalI_v_M_TP + totalI_v_M_FN
+    
+    totalAsymptomatic_F = AF_ch + AF_m + AF_wp + AF_wnp
+    totalI_F_RDT_TP = IF_RDT_TP_ch + IF_RDT_TP_m + IF_RDT_TP_wp + IF_RDT_TP_wnp
+    totalI_F_RDT_FN = IF_RDT_FN_ch + IF_RDT_FN_m + IF_RDT_FN_wp + IF_RDT_FN_wnp
+    totalI_F_M_TP = IF_M_TP_ch + IF_M_TP_m + IF_M_TP_wp + IF_M_TP_wnp
+    totalI_F_M_FN = IF_M_FN_ch + IF_M_FN_m + IF_M_FN_wp + IF_M_FN_wnp
+    
+    totalFalciparum = totalAsymptomatic_F + totalI_F_RDT_TP + totalI_F_RDT_FN + totalI_F_M_TP + totalI_F_M_FN
+    
+    
+    lambda_mos_V = beta_Mos*((totalVivax)/.pop)*beta_BN*pBN
+      
+    lambda_mos_F = beta_Mos*((totalFalciparum)/.pop)*beta_BN*pBN
+    
+    b_mos = beta_Temp + beta_Rain + beta_BN_b + beta_Spray 
+    
+    print("#############################")
+    print(lambda_v)
+    print(lambda_mos_V)
+    
+
     notPregnant = 1/40
-    m1 = 0
-    m2 = 0
-    m3 = 0
-    m4 = 0
-    m5 = 0
-    m6 = 0
-    m7 = 0
-    m8 = 0
-    m9 = 0
-    m10 = 0
-    m11 = 0
-    
-    m1_m = 0
-    m2_m = 0
-    m3_m = 0
-    m4_m = 0
-    m5_m = 0
-    m6_m = 0
-    m7_m = 0
-    m8_m = 0
-    m9_m = 0
-    m10_m = 0
-    m11_m = 0
-    
-    migrationFor_ch_wp_wnp = c(m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11)
-    migrationFor_m = c(m1_m, m2_m, m3_m, m4_m, m5_m, m6_m, m7_m, m8_m, m9_m, m10_m, m11_m)
-    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-    print(S_ch)
+    # m1 = 0.5
+    # m2 = 0.25
+    # m3 = 1
+    # m4 = 0
+    # m5 = 0
+    # m6 = 0
+    # m7 = 0
+    # m8 = 0
+    # m9 = 0
+    # m10 = 0
+    # m11 = 0
+    # 
+    # m1_m = 0
+    # m2_m = 0
+    # m3_m = 0
+    # m4_m = 0
+    # m5_m = 0
+    # m6_m = 0
+    # m7_m = 0
+    # m8_m = 0
+    # m9_m = 0
+    # m10_m = 0
+    # m11_m = 0
+    # 
+    # migrationFor_ch_wp_wnp = c(m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11)
+    # migrationFor_m = c(m1_m, m2_m, m3_m, m4_m, m5_m, m6_m, m7_m, m8_m, m9_m, m10_m, m11_m)
+    migrationMatrix = distMat
   
     
     emptyCat_ch = c(IT_ch, S_ch, Ev_ch, Av_ch, Iv_RDT_TP_ch, Iv_RDT_FN_ch,
@@ -483,7 +534,7 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
                   sigma_v*(1 - pA_v)*pFN_RDT*Ev_ch, delta_v*Av_ch, tau*Iv_RDT_TP_ch, tau*Iv_M_TP_ch, delta_v*Iv_RDT_FN_ch, delta_v*Iv_M_FN_ch, 
                   (1-pCT)*r*Tv_ch, pCT*r*Tv_ch, phi*notTv_ch, (1-pTD)*theta*Tv_D_ch, pTD*theta*Tv_D_ch, smallOmega*pA_v*Ev_ch, 
                   smallOmega*(1 - pA_v)*pTP_RDT*Ev_ch, smallOmega*(1 - pA_v)*pFN_RDT*Ev_ch, smallOmega*(1 - pA_v)*pTP_M*Ev_ch, 
-                  smallOmega*(1 - pA_v)*pFN_RDT*Ev_ch, rho*Rv_ch, lambda_v*S_ch)
+                  smallOmega*(1 - pA_v)*pFN_RDT*Ev_ch, rho*Rv_ch, lambda_v*beta_v_ch*S_ch)
     
     vivaxPath_m = c(sigma_v*pA_v*Ev_m, sigma_v*(1 - pA_v)*pTP_RDT*Ev_m, sigma_v*(1 - pA_v)*pFN_RDT*Ev_m, sigma_v*(1 - pA_v)*pTP_M*Ev_m, 
                      sigma_v*(1 - pA_v)*pFN_RDT*Ev_m, delta_v*Av_m, tau*Iv_RDT_TP_m, tau*Iv_M_TP_m, delta_v*Iv_RDT_FN_m, delta_v*Iv_M_FN_m, 
@@ -495,7 +546,7 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
                      sigma_v*(1 - pA_v)*pFN_RDT*Ev_wp, delta_v*Av_wp, tau*Iv_RDT_TP_wp, tau*Iv_M_TP_wp, delta_v*Iv_RDT_FN_wp, delta_v*Iv_M_FN_wp, 
                      (1-pCT)*r*Tv_wp, pCT*r*Tv_wp, phi*notTv_wp, (1-pTD)*theta*Tv_D_wp, pTD*theta*Tv_D_wp, smallOmega*pA_v*Ev_wp, 
                      smallOmega*(1 - pA_v)*pTP_RDT*Ev_wp, smallOmega*(1 - pA_v)*pFN_RDT*Ev_wp, smallOmega*(1 - pA_v)*pTP_M*Ev_wp, 
-                     smallOmega*(1 - pA_v)*pFN_RDT*Ev_wp, rho*Rv_wp, lambda_v*S_wp)
+                     smallOmega*(1 - pA_v)*pFN_RDT*Ev_wp, rho*Rv_wp, lambda_v*beta_v_wp*S_wp)
     
     vivaxPath_wnp = c(sigma_v*pA_v*Ev_wnp, sigma_v*(1 - pA_v)*pTP_RDT*Ev_wnp, sigma_v*(1 - pA_v)*pFN_RDT*Ev_wnp, sigma_v*(1 - pA_v)*pTP_M*Ev_wnp, 
                      sigma_v*(1 - pA_v)*pFN_RDT*Ev_wnp, delta_v*Av_wnp, tau*Iv_RDT_TP_wnp, tau*Iv_M_TP_wnp, delta_v*Iv_RDT_FN_wnp, delta_v*Iv_M_FN_wnp, 
@@ -505,16 +556,16 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
     
     
     
-    falciparumPath_ch = c(lambda_F*S_ch, sigma_F*(1 - pA_F)*pTP_RDT*EF_ch, sigma_F*(1 - pA_F)*pFN_RDT*EF_ch, sigma_F*(1 - pA_F)*pTP_M*EF_ch, 
+    falciparumPath_ch = c(lambda_F*beta_F_ch*S_ch, sigma_F*pA_F*EF_ch, sigma_F*(1 - pA_F)*pTP_RDT*EF_ch, sigma_F*(1 - pA_F)*pFN_RDT*EF_ch, sigma_F*(1 - pA_F)*pTP_M*EF_ch, 
                        sigma_F*(1 - pA_F)*pFN_RDT*EF_ch, tau*IF_RDT_TP_ch, tau*IF_M_TP_ch, delta_F*IF_RDT_FN_ch, delta_F*IF_M_FN_ch, delta_F*AF_ch, 
                        delta_F*notTF_ch, r*TF_ch, rho*RF_ch) 
-    falciparumPath_m = c(lambda_F*S_m, sigma_F*(1 - pA_F)*pTP_RDT*EF_m, sigma_F*(1 - pA_F)*pFN_RDT*EF_m, sigma_F*(1 - pA_F)*pTP_M*EF_m, 
+    falciparumPath_m = c(lambda_F*S_m, sigma_F*pA_F*EF_m, sigma_F*(1 - pA_F)*pTP_RDT*EF_m, sigma_F*(1 - pA_F)*pFN_RDT*EF_m, sigma_F*(1 - pA_F)*pTP_M*EF_m, 
                           sigma_F*(1 - pA_F)*pFN_RDT*EF_m, tau*IF_RDT_TP_m, tau*IF_M_TP_m, delta_F*IF_RDT_FN_m, delta_F*IF_M_FN_m, delta_F*AF_m, 
                           delta_F*notTF_m, r*TF_m, rho*RF_m)
-    falciparumPath_wp = c(lambda_F*S_wp, sigma_F*(1 - pA_F)*pTP_RDT*EF_wp, sigma_F*(1 - pA_F)*pFN_RDT*EF_wp, sigma_F*(1 - pA_F)*pTP_M*EF_wp, 
+    falciparumPath_wp = c(lambda_F*beta_F_wp*S_wp, sigma_F*pA_F*EF_wp, sigma_F*(1 - pA_F)*pTP_RDT*EF_wp, sigma_F*(1 - pA_F)*pFN_RDT*EF_wp, sigma_F*(1 - pA_F)*pTP_M*EF_wp, 
                           sigma_F*(1 - pA_F)*pFN_RDT*EF_wp, tau*IF_RDT_TP_wp, tau*IF_M_TP_wp, delta_F*IF_RDT_FN_wp, delta_F*IF_M_FN_wp, delta_F*AF_wp, 
                           delta_F*notTF_wp, r*TF_wp, rho*RF_wp)
-    falciparumPath_wnp = c(lambda_F*S_wnp, sigma_F*(1 - pA_F)*pTP_RDT*EF_wnp, sigma_F*(1 - pA_F)*pFN_RDT*EF_wnp, sigma_F*(1 - pA_F)*pTP_M*EF_wnp, 
+    falciparumPath_wnp = c(lambda_F*S_wnp, sigma_F*pA_F*EF_wnp, sigma_F*(1 - pA_F)*pTP_RDT*EF_wnp, sigma_F*(1 - pA_F)*pFN_RDT*EF_wnp, sigma_F*(1 - pA_F)*pTP_M*EF_wnp, 
                           sigma_F*(1 - pA_F)*pFN_RDT*EF_wnp, tau*IF_RDT_TP_wnp, tau*IF_M_TP_wnp, delta_F*IF_RDT_FN_wnp, delta_F*IF_M_FN_wnp, delta_F*AF_wnp, 
                           delta_F*notTF_wnp, r*TF_wnp, rho*RF_wnp)
     
@@ -535,17 +586,70 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
     wnpTowp = pregnant*emptyCat_wnp
     wpTownp = notPregnant*emptyCat_wp
     
-    migrationVec = c()
     
-    for (i in 1:11)
-    {
-      migrate_ch = migrationFor_ch_wp_wnp[i]*emptyCat_ch
-      migrate_m = migrationFor_m[i]*emptyCat_m
-      migrate_wp = migrationFor_ch_wp_wnp[i]*emptyCat_wp
-      migrate_wnp = migrationFor_ch_wp_wnp[i]*emptyCat_wnp
-      
-      migrationVec = c(migrationVec, migrate_ch, migrate_m, migrate_wp, migrate_wnp)
-    }
+    migrationVec = numeric(N*N*85)
+    
+    replacementIndex = 1
+    
+    
+    # for (i in 1:N)
+    # {
+    #   migrationVector = migrationMatrix[i,]
+    #   
+    #   for (j in 1:(length(emptyCat_ch)/N))
+    #   {
+    #     
+    #     # if (j == 2)
+    #     # {
+    #     #   print(j)
+    #     #   print(emptyCat_ch[((j-1)*N + 1):(j*N)])
+    #     #   print(migrationVector)
+    #     #   print(migrationVector*emptyCat_ch[((j-1)*N + 1):(j*N)])
+    #     # }
+    #     print(c(replacementIndex:(replacementIndex - 1+length(emptyCat_m)/N)))
+    #     
+    # 
+    #     tempMigrate_ch = migrationVector*emptyCat_ch[((j-1)*N + 1):(j*N)]
+    #     migrationVec[replacementIndex:(replacementIndex- 1+length(emptyCat_ch)/N)] = tempMigrate_ch
+    #   }
+    # 
+    #   
+    #   for (j in 1:(length(emptyCat_m)/N))
+    #   {
+    # 
+    #     tempMigrate_m = migrationVector*emptyCat_m[((j-1)*N + 1):(j*N)]
+    #     migrationVec[replacementIndex:(replacementIndex - 1 + length(emptyCat_m)/N)] = tempMigrate_m
+    #   }
+    # 
+    #   for (j in 1:(length(emptyCat_wp)/N))
+    #   {
+    #     tempMigrate_wp = migrationVector*emptyCat_wp[((j-1)*N + 1):(j*N)]
+    #     migrationVec[replacementIndex:(replacementIndex- 1+length(emptyCat_wp)/N)] = tempMigrate_wp
+    #   }
+    # 
+    #   
+    #   for (j in 1:(length(emptyCat_wnp)/N))
+    #   {
+    #     tempMigrate_wnp = migrationVector*emptyCat_wnp[((j-1)*N + 1):(j*N)]
+    #     migrationVec[replacementIndex:(replacementIndex- 1+length(emptyCat_wnp)/N)] = tempMigrate_wnp
+    #   }
+    # 
+    # }
+    #print(migrationVec)
+    
+    M_ch  <- matrix(emptyCat_ch,  nrow = N, byrow = FALSE)  # N x 22
+    M_m   <- matrix(emptyCat_m,   nrow = N, byrow = FALSE)  # N x 21
+    M_wp  <- matrix(emptyCat_wp,  nrow = N, byrow = FALSE)  # N x 21
+    M_wnp <- matrix(emptyCat_wnp, nrow = N, byrow = FALSE)  # N x 21
+    M_hum <- cbind(M_ch, M_m, M_wp, M_wnp)                  # N x 85  (rows = source patches)
+    
+    # For each destination z, scale each ROW i by migrationMatrix[i, z]
+    blocks <- lapply(1:N, function(z) sweep(M_hum, 1, migrationMatrix[, z], `*`))  # each N x 85
+    migration_block <- do.call(cbind, blocks)  # N x (85*N), column blocks in order z = 1..N
+    
+    # Flatten in the same layout used later (array(..., dim=c(N, A)); c(t(.)))
+    migrationVec <- c(t(migration_block))
+    
     
     additionalMortCompViv_ch = c(Av_ch, Iv_RDT_TP_ch, Iv_M_TP_ch)
     additionalMortCompFal_ch = c(AF_ch, IF_RDT_TP_ch, IF_M_TP_ch)
@@ -616,6 +720,40 @@ postproc <- function(parameters,out,tran) {
        })
 }
 
+# OLD dZ
+# dZ <- rep(0.0, V) %>% as.numeric()
+# epiModel <- function(t, state, parameters, input, scenario) {
+#   with(as.list(c(state, parameters)), {
+#     # ************************************************************************************* #
+#     # define variables
+#     # ************************************************************************************* #
+#     
+#     Z <- state
+#     
+#     # rates of change
+#     ti <- 1
+#     transit <- malrates(state, input, parameters, as.matrix(migrationMatrix), t, ti, scenario)
+#     if (any(!is.finite(transit))) {
+#       bad <- which(!is.finite(transit))[1]
+#       stop(sprintf("non-finite transit at t=%.6f (index %d)", t, bad), call. = FALSE)
+#     }
+#     
+#     EQ(dZ, transit, transitionsiu1, transitionsiu2, transitionsiv1, transitionsiv2)
+#     
+#     if (any(!is.finite(dZ))) {
+#       bad <- which(!is.finite(dZ))[1]
+#       stop(sprintf("non-finite dZ at t=%.6f (index %d)", t, bad), call. = FALSE)
+#     }
+#     
+#     list(c(dZ))
+#     # return the rate of change
+#     # print(c(t, dZ))
+#     # browser()
+#     list(c(dZ))
+#   }
+#   ) 
+#   # end with(as.list ...
+# }
 
 dZ <- rep(0.0, V) %>% as.numeric()
 epiModel <- function(t, state, parameters, input, scenario) {
@@ -628,20 +766,25 @@ epiModel <- function(t, state, parameters, input, scenario) {
     
     # rates of change
     ti <- 1
-    transit <- malrates(state, input, parameters, migrationMatrix, t, ti, scenario)
+    transit <- malrates(state, input, parameters, as.matrix(migrationMatrix), t, ti, scenario)
     if (any(!is.finite(transit))) {
       bad <- which(!is.finite(transit))[1]
       stop(sprintf("non-finite transit at t=%.6f (index %d)", t, bad), call. = FALSE)
     }
     
-    EQ(dZ, transit, transitionsiu1, transitionsiu2, transitionsiv1, transitionsiv2)
+    neq <- length(state)  # or use V
+    dZ  <- EQ_omp(transit,
+                  transitionsiu1,
+                  transitionsiu2,
+                  transitionsiv1,
+                  transitionsiv2,
+                  neq)
     
     if (any(!is.finite(dZ))) {
       bad <- which(!is.finite(dZ))[1]
       stop(sprintf("non-finite dZ at t=%.6f (index %d)", t, bad), call. = FALSE)
     }
-    
-    list(c(dZ))
+    list(dZ)
     # return the rate of change
     # print(c(t, dZ))
     # browser()
@@ -652,26 +795,8 @@ epiModel <- function(t, state, parameters, input, scenario) {
 }
 
 
-run_model <- function(parameters, scenario) {
+run_model <- function(parameters, scenario, time, initcondrun) {
   # ************************************************************************************* 
-  initcondrun <- NULL
-  for (n in 1:N) {
-    initcondrun <- c(initcondrun, c(rep(0,(B)))); 
-    initcondrun[varind[1,n]] <- 0 # susceptible
-    initcondrun[varind[2,n]] <- 2100# exposed
-    initcondrun[varind[3,n]] <- 2900#  infectious
-    initcondrun[varind[4,n]] <- 2900; # Nothing in Recovered initially
-    for(j in 5:85)
-    {
-      initcondrun[varind[j, n]] = 0
-      
-    }
-    initcondrun[varind[86, n]] = 10000
-    initcondrun[varind[87, n]] = 50000
-    initcondrun[varind[88, n]] = 50000
-    initcondrun[varind[89, n]] = 0
-    initcondrun[varind[90, n]] = 0
-  }
   
   # all initial conditions must be integers
   initoderun <- initcondrun
@@ -687,24 +812,21 @@ run_model <- function(parameters, scenario) {
                    input=inp, scenario=scenario)
   
   # Compute transitions at each time step
-  print("before tranoderun")
-  print(timesrun)
-  print(dim(outoderun))
-  tranoderun<-matrix(0,nrow=dim(outoderun)[1],ncol=length(transitions))
-  print(dim(tranoderun))
-  for (ti in 1:(tsteps+1)){
-    print(ti)
-    tranoderun[ti,]<-t(malrates(outoderun[ti,2:(1+V)],inp,parameters,migrationMatrix, 0,ti,scenario ))
-  }
+  tranoderun<-matrix(0,nrow=dim(outoderun)[1],ncol=N*A)
+  #print(dim(tranoderun))
+  # for (ti in 1:(tsteps+1)){
+  #   #print(ti)
+  #   tranoderun[ti,]<-t(malrates(outoderun[ti,2:(1+V)],inp,parameters,migrationMatrix, 0,ti,scenario ))
+  # }
   #Compute outputs
-  ppout<-postproc(parameters,outoderun,tranoderun)
+  #ppout<-postproc(parameters,outoderun,tranoderun)
   
   modeltimes<-outoderun[,1]+startyear
   
-  inc_pred_ode<-ppout[,1:N]
+  #inc_pred_ode<-ppout[,1:N]
   
   
-  MALout<-list(as.data.table(inc_pred_ode), #2
+  MALout<-list(#as.data.table(inc_pred_ode), #2
                outoderun #3
   )
   
@@ -720,8 +842,39 @@ run_model <- function(parameters, scenario) {
 
 scenario <- NULL
 
+initcondrun <- NULL
+for (n in 1:N) {
+  initcondrun <- c(initcondrun, c(rep(0,(B)))); 
+  initcondrun[varind[1,n]] <- 0 # Immune Children
+  initcondrun[varind[2,n]] <- 1000# Susceptible Childre
+  initcondrun[varind[3,n]] <- 100#  Children Exposed Vivax
+  initcondrun[varind[14,n]] <- 100; # Nothing in Recovered initially
+  
+  
+  for(j in 5:85)
+  {
+    initcondrun[varind[j, n]] = 0
+    
+  }
+  initcondrun[varind[86, n]] = 10000
+  initcondrun[varind[87, n]] = 50000
+  initcondrun[varind[88, n]] = 0
+  initcondrun[varind[89, n]] = 50000
+  initcondrun[varind[90, n]] = 0
+}
+
+initcondrun[varind[1,4]] <- 0 # Immune Children
+initcondrun[varind[2,4]] <- 2500# Susceptible Childre
+initcondrun[varind[3,4]] <- 2000#  Children Exposed Vivax
+initcondrun[varind[14,4]] <- 50; # Nothing in Recovered initially
+
+initcondrun[varind[1,11]] <- 0 # Immune Children
+initcondrun[varind[2,11]] <- 50000# Susceptible Childre
+initcondrun[varind[3,11]] <- 10000#  Children Exposed Vivax
+initcondrun[varind[14,11]] <- 25000; # Nothing in Recovered initially
+
 tryCatch({
-  mo <- run_model(parameters, scenario)
+  mo <- run_model(parameters, scenario, time, initcondrun)
 }, error = function(e) {
   message("Model failed: ", conditionMessage(e))
   traceback()
@@ -740,5 +893,28 @@ get_series <- function(out, vname, patch) {
 }
 
 
+out <- mo[[1]]  # deSolve output matrix
 
-S_ch_p5 <- get_series(mo[[2]], "S_ch", 5)
+get_series <- function(out, vname, patch) {
+  out[, col_idx(vname, patch), drop = TRUE]
+}
+
+S_ch_p5       <- get_series(out, "S_ch", 5)
+Iv_RDT_TP_p5  <- get_series(out, "Iv_RDT_TP_ch", 5)
+Iv_RDT_FN_p5  <- get_series(out, "Iv_RDT_FN_ch", 5)
+Iv_M_TP_p5    <- get_series(out, "Iv_M_TP_ch", 5)
+Iv_M_FN_p5    <- get_series(out, "Iv_M_FN_ch", 5)
+Av_p5         <- get_series(out, "Av_ch", 5)
+
+IF_RDT_TP_p5  <- get_series(out, "IF_RDT_TP_ch", 5)
+IF_RDT_FN_p5  <- get_series(out, "IF_RDT_FN_ch", 5)
+IF_M_TP_p5    <- get_series(out, "IF_M_TP_ch", 5)
+IF_M_FN_p5    <- get_series(out, "IF_M_FN_ch", 5)
+AF_p5         <- get_series(out, "AF_ch", 5)
+
+totalVivaxInfection      <- Iv_RDT_TP_p5 + Iv_RDT_FN_p5 + Iv_M_TP_p5 + Iv_M_FN_p5 + Av_p5
+totalFalciparumInfection <- IF_RDT_TP_p5 + IF_RDT_FN_p5 + IF_M_TP_p5 + IF_M_FN_p5 + AF_p5
+
+plot(out[,1], S_ch_p5, type = "l")   # use solver’s time column
+lines(out[,1], totalVivaxInfection, col = "red")
+lines(out[,1], totalFalciparumInfection, col = "blue")
