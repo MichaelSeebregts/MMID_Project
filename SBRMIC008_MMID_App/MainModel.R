@@ -65,15 +65,15 @@ NumericVector EQ_omp(const NumericVector transit,
 
 
 N = 12
-B = 22 + 21*3 + 5  # number of variables per patch
-A = 38  + # Transitions for Child
-    36*3 + # Transitions for Men, Non Pregnant Women and Pregnant Women
-    ((22 + 21*3)*(N)) + # Migration 
-    (22 + 21*3) + # Deaths
-    (21 + 21 + 21*2) + # Aging for children and women moving from not pregnant to pregnant 
-    (6)*4 + # Death when infected with vivax or falciparum 
-    5 + # Mosquito movements
-    5 # Mosquito Deaths
+B = 14 + 8*3 + 3  # number of variables per patch
+A = 30  + # Transitions for Child
+  15*3 + # Transitions for Men, Non Pregnant Women and Pregnant Women
+  ((14 + 8*3)*(N)) + # Migration 
+  (14 + 8*3) + # Deaths
+  (8 + 8 + 8*2) + # Aging for children and women moving from not pregnant to pregnant 
+  (3*4) # Additional Deaths from complicated, uncomplicated and asymptomatic infection
+3 + # Mosquito movements
+  3 # Mosquito Deaths
 V = N*B
 L = N*A
 
@@ -84,19 +84,19 @@ dtout = 1/52 # output timestep
 tsteps = round(tyears/dtout) # number of time steps
 time = startyear+seq(0, tyears, dtout) # time vector
 
-alivepopHum = c(1:(B - 5))
-alivepopMos = c((B - 4):B)
+alivepopHum = c(1:(B - 3))
+alivepopMos = c((B - 2):B)
 popc <- rep(0,N)
 popM <- rep(0,N)
 
 childClass = c("ch")
 otherClasses = c("m","wnp","wp")
-compartmentsChildren = c("IT", "S", "Ev", "Av", "Iv_RDT_TP", "Iv_RDT_FN", "Iv_M_TP", "Iv_M_FN", "Tv", "notTv", "Tv_D", "Ev_D", "Rv", "EF", "AF", "IF_RDT_TP", "IF_RDT_FN", "IF_M_TP", "IF_M_FN", "TF", "notTF", "RF")
-compartmentsOther = c("S", "Ev", "Av", "Iv_RDT_TP", "Iv_RDT_FN", "Iv_M_TP", "Iv_M_FN", "Tv", "notTv", "Tv_D", "Ev_D", "Rv", "EF", "AF", "IF_RDT_TP", "IF_RDT_FN", "IF_M_TP", "IF_M_FN", "TF", "notTF", "RF")
+compartmentsChildren = c("S", "It", "V1", "V2", "V3", "v4", "vstar", "E", "C", "U", "A", "Tc", "Tu", "R") 
+compartmentsOther = c("S", "E", "C", "U", "A", "Tc", "Tu", "R")
 var_namesChildren = as.vector(sapply(childClass, function(cl) paste0(compartmentsChildren, "_", cl)))
 var_namesOther = as.vector(sapply(otherClasses, function(cl) paste0(compartmentsOther, "_", cl)))
 
-var_namesMosquitos = c("S_Mo", "Ev_Mo", "Iv_Mo", "EF_Mo", "IF_Mo")
+var_namesMosquitos = c("S_Mo", "E_Mo", "I_Mo")
 
 var_names = c(var_namesChildren, var_namesOther, var_namesMosquitos)
 
@@ -105,7 +105,7 @@ getStates = function(x) {
     popc[n] <- sum(x[varind[alivepopHum,n]])  
     popM[n] <- sum(x[varind[alivepopMos,n]])  
   }
-    
+  
   states = list()
   
   for (j in 1:length(var_names))
@@ -115,7 +115,7 @@ getStates = function(x) {
   
   states$.pop = c(popc)
   states$.popMos = c(popM)
-    
+  
   return(states)
 }
 
@@ -131,22 +131,67 @@ for (n in 1:N){
   }
 }
 
+migrationVector = c(1:N)
 
 transitions = matrix(0, nrow=L, ncol=4)
 for (n in 1:N) {
-  indAdd = 0
+  indAdd = 1
   
-  migrationVector = c(1:12)
-  
-  # Birth
-  transitions[traind[1 + indAdd,n],] <- c(varind[1,n],  0, varind[1,n], +1) #    -> IT
+  # -> It
+  transitions[traind[indAdd,n],] <- c(varind[1,n],  0, varind[2,n], +1) 
   indAdd = indAdd +1
   
-  # Loss of immunity
-  transitions[traind[2 + indAdd,n],] <- c(varind[1,n],  -1, varind[2,n], +1) #  IT  -> S
+  # It -> S
+  transitions[traind[indAdd,n],] <- c(varind[2,n],  -1, varind[1,n], +1) 
   indAdd = indAdd + 1
   
-
+  # It -> V1 
+  transitions[traind[indAdd,n],] <- c(varind[2,n],  -1, varind[3,n], +1) 
+  indAdd = indAdd + 1
+  # V1 -> V2 
+  transitions[traind[indAdd,n],] <- c(varind[3,n],  -1, varind[4,n], +1) 
+  indAdd = indAdd + 1
+  # V2 -> V3 
+  transitions[traind[indAdd,n],] <- c(varind[4,n],  -1, varind[5,n], +1) 
+  indAdd = indAdd + 1
+  
+  # V3 -> V4 
+  transitions[traind[indAdd,n],] <- c(varind[5,n],  -1, varind[6,n], +1) 
+  indAdd = indAdd + 1
+  
+  # V4 -> V* 
+  transitions[traind[indAdd,n],] <- c(varind[6,n],  -1, varind[7,n], +1) 
+  indAdd = indAdd + 1
+  
+  
+  # V1 -> E
+  transitions[traind[indAdd,n],] <- c(varind[3,n],  -1, varind[8,n], +1) 
+  indAdd = indAdd + 1
+  # V2 -> E
+  transitions[traind[indAdd,n],] <- c(varind[4,n],  -1, varind[8,n], +1) 
+  indAdd = indAdd + 1
+  # V3 -> E
+  transitions[traind[indAdd,n],] <- c(varind[5,n],  -1, varind[8,n], +1) 
+  indAdd = indAdd + 1
+  # V4 -> E
+  transitions[traind[indAdd,n],] <- c(varind[6,n],  -1, varind[8,n], +1) 
+  indAdd = indAdd + 1
+  # V* -> E
+  transitions[traind[indAdd,n],] <- c(varind[7,n],  -1, varind[8,n], +1) 
+  indAdd = indAdd + 1
+  
+  # V1 -> S
+  transitions[traind[indAdd,n],] <- c(varind[3,n],  -1, varind[1,n], +1)
+  indAdd = indAdd + 1
+  # V2 -> S
+  transitions[traind[indAdd,n],] <- c(varind[4,n],  -1, varind[1,n], +1) 
+  indAdd = indAdd + 1
+  # V3 -> V*
+  transitions[traind[indAdd,n],] <- c(varind[5,n],  -1, varind[8,n], +1) 
+  indAdd = indAdd + 1
+  # V* -> S
+  transitions[traind[indAdd,n],] <- c(varind[7,n],  -1, varind[1,n], +1) 
+  indAdd = indAdd + 1
   
   # Death
   for (i in 1:B)
@@ -156,171 +201,127 @@ for (n in 1:N) {
   indAdd = indAdd + B
   print(indAdd)
   
-
   
-  # Vivax 
+  
+  # Infection pathway  
   
   for (j in 1:4)
   {
     
     if (j == 1)
     {
-      transitions[traind[1 + indAdd, n],] <- c(varind[4,n], +1, varind[3,n], -1)
-      transitions[traind[2 + indAdd, n],] <- c(varind[5,n], +1, varind[3,n], -1)
-      transitions[traind[3 + indAdd, n],] <- c(varind[6,n], +1, varind[3,n], -1)
-      transitions[traind[4 + indAdd, n],] <- c(varind[7,n], +1, varind[3,n], -1)
-      transitions[traind[5 + indAdd, n],] <- c(varind[8,n], +1, varind[3,n], -1)
-      transitions[traind[6 + indAdd, n],] <- c(varind[4,n], -1, varind[12,n], +1)
-      transitions[traind[7 + indAdd, n],] <- c(varind[5,n], -1, varind[9,n], +1)
-      transitions[traind[8 + indAdd, n],] <- c(varind[7,n], -1, varind[9,n], +1)
-      transitions[traind[9 + indAdd, n],] <- c(varind[6,n], -1, varind[12,n], +1)
-      transitions[traind[10 + indAdd, n],] <- c(varind[8,n], -1, varind[12,n], +1)
-      transitions[traind[11 + indAdd, n],] <- c(varind[9,n], -1, varind[10,n], +1)
-      transitions[traind[12 + indAdd, n],] <- c(varind[9,n], -1, varind[11,n], +1)
-      transitions[traind[13 + indAdd, n],] <- c(varind[10,n], -1, varind[12,n], +1)
-      transitions[traind[14 + indAdd, n],] <- c(varind[13,n], +1, varind[11,n], -1)
-      transitions[traind[15 + indAdd, n],] <- c(varind[12,n], +1, varind[11,n], -1)
-      transitions[traind[16 + indAdd, n],] <- c(varind[4,n], +1, varind[12,n], -1)
-      transitions[traind[17 + indAdd, n],] <- c(varind[5,n], +1, varind[12,n], -1)
-      transitions[traind[18 + indAdd, n],] <- c(varind[6,n], +1, varind[12,n], -1)
-      transitions[traind[19 + indAdd, n],] <- c(varind[7,n], +1, varind[12,n], -1)
-      transitions[traind[20 + indAdd, n],] <- c(varind[8,n], +1, varind[12,n], -1)
-      transitions[traind[21 + indAdd, n],] <- c(varind[2,n], +1, varind[13,n], -1)
-      transitions[traind[22 + indAdd, n],] <- c(varind[3,n], +1, varind[2,n], -1)
       
-      indAdd = indAdd + 22
-
+      transitions[traind[1 + indAdd, n],] <- c(varind[1,n], -1, varind[8,n], +1) # S -> E
+      transitions[traind[2 + indAdd, n],] <- c(varind[8,n], -1, varind[9,n], +1) # E -> C
+      transitions[traind[3 + indAdd, n],] <- c(varind[8,n], -1, varind[10,n], +1) # E -> U
+      transitions[traind[4 + indAdd, n],] <- c(varind[8,n], -1, varind[11,n], +1) # E -> Tc
+      transitions[traind[3 + indAdd, n],] <- c(varind[8,n], -1, varind[12,n], +1) # E -> Tu
+      transitions[traind[4 + indAdd, n],] <- c(varind[8,n], -1, varind[13,n], +1) # E -> A
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[9,n], -1, varind[13,n], +1) # C -> A
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[10,n], -1, varind[13,n], +1) # U -> A
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[11,n], -1, varind[13,n], +1) # Tc -> A
+      transitions[traind[4 + indAdd, n],] <- c(varind[11,n], -1, varind[14,n], +1) # Tc -> R
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[12,n], -1, varind[13,n], +1) # Tu -> A
+      transitions[traind[4 + indAdd, n],] <- c(varind[12,n], -1, varind[14,n], +1) # Tu -> R
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[13,n], -1, varind[14,n], +1) # A -> R
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[14,n], -1, varind[1,n], +1) # R -> S
+      
+    
+      
+      indAdd = indAdd + 14
+      
     }
     
     if (j > 1)
     {
-      transitions[traind[1 + indAdd, n],]  <- c(varind[3 + 22*(j-1), n],  +1, varind[2 + 22*(j-1), n],  -1)
-      transitions[traind[2 + indAdd, n],]  <- c(varind[4 + 22*(j-1), n],  +1, varind[2 + 22*(j-1), n],  -1)
-      transitions[traind[3 + indAdd, n],]  <- c(varind[5 + 22*(j-1), n],  +1, varind[2 + 22*(j-1), n],  -1)
-      transitions[traind[4 + indAdd, n],]  <- c(varind[6 + 22*(j-1), n],  +1, varind[2 + 22*(j-1), n],  -1)
-      transitions[traind[5 + indAdd, n],]  <- c(varind[7 + 22*(j-1), n],  +1, varind[2 + 22*(j-1), n],  -1)
-      transitions[traind[6 + indAdd, n],]  <- c(varind[3 + 22*(j-1), n],  -1, varind[11 + 22*(j-1), n], +1)
-      transitions[traind[7 + indAdd, n],]  <- c(varind[4 + 22*(j-1), n],  -1, varind[8 + 22*(j-1), n],  +1)
-      transitions[traind[8 + indAdd, n],] <- c(varind[6 + 22*(j-1), n],  -1, varind[8 + 22*(j-1), n],  +1)
-      transitions[traind[9 + indAdd, n],] <- c(varind[5 + 22*(j-1), n],  -1, varind[11 + 22*(j-1), n], +1)
-      transitions[traind[10 + indAdd, n],] <- c(varind[7 + 22*(j-1), n],  -1, varind[11 + 22*(j-1), n], +1)
-      transitions[traind[11 + indAdd, n],] <- c(varind[8 + 22*(j-1), n],  -1, varind[9 + 22*(j-1), n], +1)
-      transitions[traind[12 + indAdd, n],] <- c(varind[8 + 22*(j-1), n],  -1, varind[10 + 22*(j-1), n], +1)
-      transitions[traind[13 + indAdd, n],] <- c(varind[9 + 22*(j-1), n], -1, varind[11 + 22*(j-1), n], +1)
-      transitions[traind[14 + indAdd, n],] <- c(varind[12 + 22*(j-1), n], +1, varind[10 + 22*(j-1), n], -1)
-      transitions[traind[15 + indAdd, n],] <- c(varind[11 + 22*(j-1), n], +1, varind[10 + 22*(j-1), n], -1)
-      transitions[traind[16 + indAdd, n],] <- c(varind[3 + 22*(j-1), n],  +1, varind[11 + 22*(j-1), n], -1)
-      transitions[traind[17 + indAdd, n],] <- c(varind[4 + 22*(j-1), n],  +1, varind[11 + 22*(j-1), n], -1)
-      transitions[traind[18 + indAdd, n],] <- c(varind[5 + 22*(j-1), n],  +1, varind[11 + 22*(j-1), n], -1)
-      transitions[traind[19 + indAdd, n],] <- c(varind[6 + 22*(j-1), n],  +1, varind[11 + 22*(j-1), n], -1)
-      transitions[traind[20 + indAdd, n],] <- c(varind[7 + 22*(j-1), n],  +1, varind[11 + 22*(j-1), n], -1)
-      transitions[traind[21 + indAdd, n],] <- c(varind[1 + 22*(j-1), n],  +1, varind[12 + 22*(j-1), n], -1)
-      transitions[traind[22 + indAdd, n],] <- c(varind[2 + 22*(j-1), n],  +1, varind[1 + 22*(j-1), n], -1)
-      indAdd = indAdd + 22
-
-    }
-    
-  }
-
-  # Falciparum
-  
-  for (j in 1:4)
-  {
-    
-
-    if (j == 1)
-    {
-
-      transitions[traind[1 + indAdd, n],] <- c(varind[14, n],  +1, varind[2, n],  -1)
-      transitions[traind[2 + indAdd, n],] <- c(varind[15, n],  +1, varind[14, n], -1)
-      transitions[traind[3 + indAdd, n],] <- c(varind[16, n],  +1, varind[14, n], -1)
-      transitions[traind[4 + indAdd, n],] <- c(varind[17, n],  +1, varind[14, n], -1)
-      transitions[traind[5 + indAdd, n],] <- c(varind[18, n],  +1, varind[14, n], -1)
-      transitions[traind[6 + indAdd, n],] <- c(varind[19, n],  +1, varind[14, n], -1)
-      transitions[traind[7 + indAdd, n],] <- c(varind[20, n],  +1, varind[16, n], -1)
-      transitions[traind[8 + indAdd, n],] <- c(varind[20, n],  +1, varind[18, n], -1)
-      transitions[traind[9 + indAdd, n],] <- c(varind[22, n],  +1, varind[17, n], -1)
-      transitions[traind[10 + indAdd, n],] <- c(varind[22, n],  +1, varind[19, n], -1)
-      transitions[traind[11 + indAdd, n],] <- c(varind[22, n],  +1, varind[15, n], -1)
-      transitions[traind[12 + indAdd, n],] <- c(varind[22, n],  +1, varind[21, n], -1)
-      transitions[traind[13 + indAdd, n],] <- c(varind[22, n],  +1, varind[20, n], -1)
-      transitions[traind[14 + indAdd, n],] <- c(varind[2, n],   +1, varind[22, n], -1)
+      transitions[traind[1 + indAdd, n],] <- c(varind[1,n], -1, varind[2,n], +1) # S -> E
+      transitions[traind[2 + indAdd, n],] <- c(varind[2,n], -1, varind[3,n], +1) # E -> C
+      transitions[traind[3 + indAdd, n],] <- c(varind[2,n], -1, varind[4,n], +1) # E -> U
+      transitions[traind[4 + indAdd, n],] <- c(varind[2,n], -1, varind[5,n], +1) # E -> Tc
+      transitions[traind[3 + indAdd, n],] <- c(varind[2,n], -1, varind[6,n], +1) # E -> Tu
+      transitions[traind[4 + indAdd, n],] <- c(varind[2,n], -1, varind[7,n], +1) # E -> A
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[3,n], -1, varind[7,n], +1) # C -> A
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[4,n], -1, varind[7,n], +1) # U -> A
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[5,n], -1, varind[7,n], +1) # Tc -> A
+      transitions[traind[4 + indAdd, n],] <- c(varind[5,n], -1, varind[8,n], +1) # Tc -> R
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[6,n], -1, varind[7,n], +1) # Tu -> A
+      transitions[traind[4 + indAdd, n],] <- c(varind[6,n], -1, varind[8,n], +1) # Tu -> R
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[7,n], -1, varind[8,n], +1) # A -> R
+      
+      transitions[traind[4 + indAdd, n],] <- c(varind[8,n], -1, varind[1,n], +1) # R -> S
+      
       indAdd = indAdd + 14
       
-      
-
     }
     
-    if (j > 1)
-    {
-      
-      transitions[traind[1 + indAdd, n],] <- c(varind[13+ 22 + 21*(j-2), n],  +1, varind[1+ 22 + 21*(j-2), n],  -1)
-      transitions[traind[2 + indAdd, n],] <- c(varind[14+ 22 + 21*(j-2), n],  +1, varind[13+ 22 + 21*(j-2), n], -1)
-      transitions[traind[3 + indAdd, n],] <- c(varind[15+ 22 + 21*(j-2), n],  +1, varind[13+ 22 + 21*(j-2), n], -1)
-      transitions[traind[4 + indAdd, n],] <- c(varind[16+ 22 + 21*(j-2), n],  +1, varind[13+ 22 + 21*(j-2), n], -1)
-      transitions[traind[5 + indAdd, n],] <- c(varind[17+ 22 + 21*(j-2), n],  +1, varind[13+ 22 + 21*(j-2), n], -1)
-      transitions[traind[6 + indAdd, n],] <- c(varind[18+ 22 + 21*(j-2), n],  +1, varind[13+ 22 + 21*(j-2), n], -1)
-      transitions[traind[7 + indAdd, n],] <- c(varind[19+ 22 + 21*(j-2), n],  +1, varind[15+ 22 + 21*(j-2), n], -1)
-      transitions[traind[8 + indAdd, n],] <- c(varind[19+ 22 + 21*(j-2), n],  +1, varind[17+ 22 + 21*(j-2), n], -1)
-      transitions[traind[9 + indAdd, n],] <- c(varind[21+ 22 + 21*(j-2), n],  +1, varind[16+ 22 + 21*(j-2), n], -1)
-      transitions[traind[10 + indAdd, n],] <- c(varind[21+ 22 + 21*(j-2), n],  +1, varind[18+ 22 + 21*(j-2), n], -1)
-      transitions[traind[11 + indAdd, n],] <- c(varind[21+ 22 + 21*(j-2), n],  +1, varind[14+ 22 + 21*(j-2), n], -1)
-      transitions[traind[12 + indAdd, n],] <- c(varind[21+ 22 + 21*(j-2), n],  +1, varind[20+ 22 + 21*(j-2), n], -1)
-      transitions[traind[13 + indAdd, n],] <- c(varind[21+ 22 + 21*(j-2), n],  +1, varind[19+ 22 + 21*(j-2), n], -1)
-      transitions[traind[14 + indAdd, n],] <- c(varind[1+ 22 + 21*(j-2), n],   +1, varind[21+ 22 + 21*(j-2), n], -1)
-      indAdd = indAdd + 14
-    }
   }
-
-  # Aging
   
-  k = 1
+  # Aging child to man
   
-  for (i in 23:43)
-  {
-    transitions[traind[k + indAdd,n],] <- c(varind[i-21,n],  -1, varind[1,n], +1) # Aging from Child to Man
-    indAdd = indAdd + 1
-    k = k + 1
-  }
+  transitions[traind[1 + indAdd, n],] <- c(varind[1,n], -1, varind[15,n], +1)
+  transitions[traind[2 + indAdd, n],] <- c(varind[8,n], -1, varind[16,n], +1)
+  transitions[traind[3 + indAdd, n],] <- c(varind[9,n], -1, varind[17,n], +1)
+  transitions[traind[4 + indAdd, n],] <- c(varind[10,n], -1, varind[18,n], +1)
+  transitions[traind[5 + indAdd, n],] <- c(varind[11,n], -1, varind[19,n], +1)
+  transitions[traind[6 + indAdd, n],] <- c(varind[12,n], -1, varind[20,n], +1)
+  transitions[traind[7 + indAdd, n],] <- c(varind[13,n], -1, varind[21,n], +1)
+  transitions[traind[8 + indAdd, n],] <- c(varind[14,n], -1, varind[22,n], +1)
 
-  k = 1
-  for (i in 44:64)
-  {
-    transitions[traind[k + indAdd,n],] <- c(varind[i-42,n],  -1, varind[1,n], +1) # Aging from Child to Woman 
-    indAdd = indAdd + 1
-    k = k + 1
-  }
+  
+  indAdd = indAdd + 8
+  
+  # Aging child to woman
+  
+  transitions[traind[1 + indAdd, n],] <- c(varind[1,n], -1, varind[27,n], +1)
+  transitions[traind[2 + indAdd, n],] <- c(varind[8,n], -1, varind[28,n], +1)
+  transitions[traind[3 + indAdd, n],] <- c(varind[9,n], -1, varind[29,n], +1)
+  transitions[traind[4 + indAdd, n],] <- c(varind[10,n], -1, varind[30,n], +1)
+  transitions[traind[5 + indAdd, n],] <- c(varind[11,n], -1, varind[31,n], +1)
+  transitions[traind[6 + indAdd, n],] <- c(varind[12,n], -1, varind[32,n], +1)
+  transitions[traind[7 + indAdd, n],] <- c(varind[13,n], -1, varind[33,n], +1)
+  transitions[traind[8 + indAdd, n],] <- c(varind[14,n], -1, varind[34,n], +1)
 
-
+  
+  indAdd = indAdd + 8
+  
+  
   
   # Pregnancy
-
-  k = 1
-  for (i in 44:64)
+  
+  for (i in 1:8)
   {
-    transitions[traind[k + indAdd,n],] <- c(varind[i,n],  -1, varind[i + 21,n], +1) # Not Pregnant to Pregnant
-    indAdd = indAdd + 1
-    k = k + 1
+    transitions[traind[i + indAdd,n],] <- c(varind[22 + i,n],  -1, varind[30 + i,n], +1) # Not Pregnant to Pregnant
+    
+  }
+  indAdd = indAdd + 8
+  
+  
+  for (i in 1:8)
+  {
+    transitions[traind[i + indAdd,n],] <- c(varind[30 + i,n],  -1, varind[22 + i,n], +1) # Pregnant to Not Pregnant
   }
   
-
-  k = 1
-
-  for (i in 65:85)
-  {
-    transitions[traind[k + indAdd,n],] <- c(varind[i,n],  -1, varind[i-21,n], +1) # Pregnant to Not Pregnant
-    indAdd = indAdd + 1
-    k = k + 1
-  }
+  indAdd = indAdd + 8
   
-
+  
   
   # Migration
-
+  
   k = 1
   for (z in 1:N)
   {
-    for (i in 1:(B-5))
+    for (i in 1:(B-3))
     {
       transitions[traind[indAdd + 1,n],] <- c(varind[i,n],  -1, varind[i,migrationVector[z]], +1) #  Migrating from n to every 1 to 12, excluding n
       #print(indAdd + k)
@@ -329,49 +330,44 @@ for (n in 1:N) {
     
   }
   
-
+  # Additional Mortality
   
-  # Deaths from Vivax and Falciparum
-
-  transitions[traind[1 + indAdd,n],] <- c(varind[4,n],  -1, varind[1,n], 0)
-  transitions[traind[2 + indAdd,n],] <- c(varind[5,n],  -1, varind[1,n], 0)
-  transitions[traind[3 + indAdd,n],] <- c(varind[7,n],  -1, varind[1,n], 0)
-  transitions[traind[4 + indAdd,n],] <- c(varind[15,n],  -1, varind[1,n], 0)
-  transitions[traind[5 + indAdd,n],] <- c(varind[16,n],  -1, varind[1,n], 0)
-  transitions[traind[6 + indAdd,n],] <- c(varind[18,n],  -1, varind[1,n], 0)
+  # Children
+  transitions[traind[1 + indAdd, n],] <- c(varind[9,n], -1, varind[1,n], 0)
+  transitions[traind[2 + indAdd, n],] <- c(varind[10,n], -1, varind[1,n], 0)
+  transitions[traind[3 + indAdd, n],] <- c(varind[11,n], -1, varind[1,n], 0)
+  transitions[traind[4 + indAdd, n],] <- c(varind[12,n], -1, varind[1,n], 0)
+  transitions[traind[5 + indAdd, n],] <- c(varind[13,n], -1, varind[1,n], 0)
   
-  transitions[traind[7 + indAdd,n],] <- c(varind[26,n],  -1, varind[1,n], 0)
-  transitions[traind[8 + indAdd,n],] <- c(varind[27,n],  -1, varind[1,n], 0)
-  transitions[traind[9 + indAdd,n],] <- c(varind[29,n],  -1, varind[1,n], 0)
-  transitions[traind[10 + indAdd,n],] <- c(varind[37,n],  -1, varind[1,n], 0)
-  transitions[traind[11 + indAdd,n],] <- c(varind[38,n],  -1, varind[1,n], 0)
-  transitions[traind[12 + indAdd,n],] <- c(varind[40,n],  -1, varind[1,n], 0)
+  # Men
+  transitions[traind[6 + indAdd, n],] <- c(varind[17,n], -1, varind[1,n], 0)
+  transitions[traind[7 + indAdd, n],] <- c(varind[18,n], -1, varind[1,n], 0)
+  transitions[traind[8 + indAdd, n],] <- c(varind[19,n], -1, varind[1,n], 0)
+  transitions[traind[9 + indAdd, n],] <- c(varind[20,n], -1, varind[1,n], 0)
+  transitions[traind[10 + indAdd, n],] <- c(varind[21,n], -1, varind[1,n], 0)
   
-  transitions[traind[13 + indAdd,n],] <- c(varind[47,n],  -1, varind[1,n], 0)
-  transitions[traind[14 + indAdd,n],] <- c(varind[48,n],  -1, varind[1,n], 0)
-  transitions[traind[15 + indAdd,n],] <- c(varind[50,n],  -1, varind[1,n], 0)
-  transitions[traind[16 + indAdd,n],] <- c(varind[58,n],  -1, varind[1,n], 0)
-  transitions[traind[17 + indAdd,n],] <- c(varind[59,n],  -1, varind[1,n], 0)
-  transitions[traind[18 + indAdd,n],] <- c(varind[61,n],  -1, varind[1,n], 0)
   
-  transitions[traind[19 + indAdd,n],] <- c(varind[68,n],  -1, varind[1,n], 0)
-  transitions[traind[20 + indAdd,n],] <- c(varind[69,n],  -1, varind[1,n], 0)
-  transitions[traind[21 + indAdd,n],] <- c(varind[71,n],  -1, varind[1,n], 0)
-  transitions[traind[22 + indAdd,n],] <- c(varind[79,n],  -1, varind[1,n], 0)
-  transitions[traind[23 + indAdd,n],] <- c(varind[80,n],  -1, varind[1,n], 0)
-  transitions[traind[24 + indAdd,n],] <- c(varind[82,n],  -1, varind[1,n], 0)
+  # Women Not Pregnant
+  transitions[traind[11 + indAdd, n],] <- c(varind[25,n], -1, varind[1,n], 0)
+  transitions[traind[12 + indAdd, n],] <- c(varind[26,n], -1, varind[1,n], 0)
+  transitions[traind[13 + indAdd, n],] <- c(varind[27,n], -1, varind[1,n], 0)
+  transitions[traind[14 + indAdd, n],] <- c(varind[28,n], -1, varind[1,n], 0)
+  transitions[traind[15 + indAdd, n],] <- c(varind[29,n], -1, varind[1,n], 0)
   
+  # Women Pregnant
+  transitions[traind[16 + indAdd, n],] <- c(varind[33,n], -1, varind[1,n], 0)
+  transitions[traind[17 + indAdd, n],] <- c(varind[34,n], -1, varind[1,n], 0)
+  transitions[traind[18 + indAdd, n],] <- c(varind[35,n], -1, varind[1,n], 0)
+  transitions[traind[19 + indAdd, n],] <- c(varind[36,n], -1, varind[1,n], 0)
+  transitions[traind[20 + indAdd, n],] <- c(varind[37,n], -1, varind[1,n], 0)
   
   # Mosquito
   
-  transitions[traind[25 + indAdd,n],] <- c(varind[86,n],  0, varind[86,n], 1) # Birth
+  transitions[traind[21 + indAdd,n],] <- c(varind[1,n],  0, varind[39,n], +1) # Birth
   # Mosquito deaths already included above
   
-  transitions[traind[26 + indAdd,n],] <- c(varind[86,n],  -1, varind[87,n], 1) # S -> Ev
-  transitions[traind[27 + indAdd,n],] <- c(varind[86,n],  -1, varind[89,n], 1) # S -> Ef
-  
-  transitions[traind[28 + indAdd,n],] <- c(varind[87,n],  -1, varind[88,n], 1) # Ev -> Iv
-  transitions[traind[29 + indAdd,n],] <- c(varind[89,n],  -1, varind[90,n], 1) # Ef -> If
+  transitions[traind[22 + indAdd,n],] <- c(varind[39,n],  -1, varind[40,n], 1) # S -> E
+  transitions[traind[23 + indAdd,n],] <- c(varind[40,n],  -1, varind[41,n], 1) # E -> I
   
   
   
@@ -405,46 +401,43 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
   
   pars <- as.list(parameters)
   
-
+  
   pars[names(scenario)] <- scenario
-
+  
   dat <- c(pars, getStates(x))
   #data_for_with <- c(as.list(parameters), getStates(x), scenario)
   with(dat, {
     
-    lambda_v = beta_Mos*(Iv_Mo/.popMos)*beta_BN*pBN
+    totalAsymp = A_ch + A_m + A_wnp + A_wp
+    totalTreatU = Tu_ch + Tu_m + Tu_wnp + Tu_wp
+    totalTreatC = Tc_ch + Tc_m + Tc_wnp + Tc_wp
+    totalU = U_ch + U_m + U_wnp + U_wp
+    totalC = C_ch + C_m + C_wnp + C_wp
     
-    lambda_F = beta_Mos*(IF_Mo/.popMos)*beta_BN*pBN
+    totalS = S_ch + S_m + S_wnp + S_wp
+    totalE = E_ch + E_m + E_wnp + E_wp
+    totalR = R_ch + R_m + R_wnp + R_wp
     
-    totalAsymptomatic_v = Av_ch + Av_m + Av_wp + Av_wnp
-    totalI_v_RDT_TP = Iv_RDT_TP_ch + Iv_RDT_TP_m + Iv_RDT_TP_wp + Iv_RDT_TP_wnp
-    totalI_v_RDT_FN = Iv_RDT_FN_ch + Iv_RDT_FN_m + Iv_RDT_FN_wp + Iv_RDT_FN_wnp
-    totalI_v_M_TP = Iv_M_TP_ch + Iv_M_TP_m + Iv_M_TP_wp + Iv_M_TP_wnp
-    totalI_v_M_FN = Iv_M_FN_ch + Iv_M_FN_m + Iv_M_FN_wp + Iv_M_FN_wnp
+    totalImmuneAndVaccine = It_ch + v1_ch + v2_ch + v3_ch + v4_ch + vstar_ch
     
-    totalVivax = totalAsymptomatic_v + totalI_v_RDT_TP + totalI_v_RDT_FN + totalI_v_M_TP + totalI_v_M_FN
+    N_Hum = totalS + totalE + totalR + totalImmuneAndVaccine + totalAsymp + totalTreatU + totalTreatC + totalU + totalC
     
-    totalAsymptomatic_F = AF_ch + AF_m + AF_wp + AF_wnp
-    totalI_F_RDT_TP = IF_RDT_TP_ch + IF_RDT_TP_m + IF_RDT_TP_wp + IF_RDT_TP_wnp
-    totalI_F_RDT_FN = IF_RDT_FN_ch + IF_RDT_FN_m + IF_RDT_FN_wp + IF_RDT_FN_wnp
-    totalI_F_M_TP = IF_M_TP_ch + IF_M_TP_m + IF_M_TP_wp + IF_M_TP_wnp
-    totalI_F_M_FN = IF_M_FN_ch + IF_M_FN_m + IF_M_FN_wp + IF_M_FN_wnp
+    totalInfected = totalAsymp + totalTreatU + totalTreatC + totalU + totalC
     
-    totalFalciparum = totalAsymptomatic_F + totalI_F_RDT_TP + totalI_F_RDT_FN + totalI_F_M_TP + totalI_F_M_FN
+    lambda_hum = beta_Mos*(I_Mo/N_Mo)*beta_BN*pBN
     
+    lambda_mos = beta_Mos*((totalInfected)/N_Hum)*Beta_BN*pBN
     
-    lambda_mos_V = beta_Mos*((totalVivax)/.pop)*beta_BN*pBN
-      
-    lambda_mos_F = beta_Mos*((totalFalciparum)/.pop)*beta_BN*pBN
+    b_mos = b_mos*beta_Temp*beta_Rain*beta_BN_b*beta_Spray 
     
-    b_mos = beta_Temp + beta_Rain + beta_BN_b + beta_Spray 
+    N_Mos = S_Mo + E_Mo + I_Mo
     
     print("#############################")
     print(lambda_v)
     print(lambda_mos_V)
     
-
-    notPregnant = 1/40
+    
+    #notPregnant = 1/40
     # m1 = 0.5
     # m2 = 0.25
     # m3 = 1
@@ -472,46 +465,30 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
     # migrationFor_ch_wp_wnp = c(m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11)
     # migrationFor_m = c(m1_m, m2_m, m3_m, m4_m, m5_m, m6_m, m7_m, m8_m, m9_m, m10_m, m11_m)
     migrationMatrix = distMat
-  
     
-    emptyCat_ch = c(IT_ch, S_ch, Ev_ch, Av_ch, Iv_RDT_TP_ch, Iv_RDT_FN_ch,
-                 Iv_M_TP_ch, Iv_M_FN_ch, Tv_ch, notTv_ch, Tv_D_ch, Ev_D_ch, Rv_ch, 
-                 EF_ch, AF_ch, IF_RDT_TP_ch, IF_RDT_FN_ch, IF_M_TP_ch, 
-                 IF_M_FN_ch, TF_ch, notTF_ch, RF_ch)
-    emptyCat_m = c(S_m, Ev_m, Av_m, Iv_RDT_TP_m, Iv_RDT_FN_m,
-                   Iv_M_TP_m, Iv_M_FN_m, Tv_m, notTv_m, Tv_D_m, Ev_D_m, Rv_m, 
-                   EF_m, AF_m, IF_RDT_TP_m, IF_RDT_FN_m, IF_M_TP_m, 
-                   IF_M_FN_m, TF_m, notTF_m, RF_m)
-    emptyCat_wp = c( S_wp, Ev_wp, Av_wp, Iv_RDT_TP_wp, Iv_RDT_FN_wp,
-                   Iv_M_TP_wp, Iv_M_FN_wp, Tv_wp, notTv_wp, Tv_D_wp, Ev_D_wp, Rv_wp, 
-                   EF_wp, AF_wp, IF_RDT_TP_wp, IF_RDT_FN_wp, IF_M_TP_wp, 
-                   IF_M_FN_wp, TF_wp, notTF_wp, RF_wp)
-    emptyCat_wnp = c(S_wnp, Ev_wnp, Av_wnp, Iv_RDT_TP_wnp, Iv_RDT_FN_wnp,
-                   Iv_M_TP_wnp, Iv_M_FN_wnp, Tv_wnp, notTv_wnp, Tv_D_wnp, Ev_D_wnp, Rv_wnp, 
-                   EF_wnp, AF_wnp, IF_RDT_TP_wnp, IF_RDT_FN_wnp, IF_M_TP_wnp, 
-                   IF_M_FN_wnp, TF_wnp, notTF_wnp, RF_wnp)
+    
+    emptyCat_ch = c(S_ch,  It_ch,  v1_ch,  v2_ch,  v3_ch,  v4_ch,  vstar_ch,  E_ch,  C_ch,  U_ch,  A_ch,  Tc_ch,  Tu_ch,  R_ch)
+    emptyCat_m = c(S_m,   E_m,  C_m,  U_m,  A_m,  Tc_m,  Tu_m,  R_m)
+    emptyCat_wp = c(S_wp,   E_wp,  C_wp,  U_wp,  A_wp,  Tc_wp,  Tu_wp,  R_wp)
+    emptyCat_wnp = c(S_wnp,   E_wnp,  C_wnp,  U_wnp,  A_wnp,  Tc_wnp,  Tu_wnp,  R_wnp)
     
     #emptyCat = c(S, Ev, Av, Iv_RDT_TP, Iv_RDT_FN,
-     #                Iv_M_TP, Iv_M_FN, Tv, notTv, Tv_D, Ev_D, Rv, 
+    #                Iv_M_TP, Iv_M_FN, Tv, notTv, Tv_D, Ev_D, Rv, 
     #                 EF, AF, IF_RDT_TP, IF_RDT_FN, IF_M_TP, 
-      #               IF_M_FN, TF, notTF, RF)
+    #               IF_M_FN, TF, notTF, RF)
     
-# compartmentsChildren = c("IT", "S", "Ev", "Av", "Iv_RDT_TP", "Iv_RDT_FN", "Iv_M_TP", "Iv_M_FN", 
- #   "Tv", "notTv", "Tv_D", "Ev_D", "Rv", "EF", "AF", "IF_RDT_TP", "IF_RDT_FN", "IF_M_TP", 
- #   "IF_M_FN", "TF", "notTF", "RF")    
+    # compartmentsChildren = c("IT", "S", "Ev", "Av", "Iv_RDT_TP", "Iv_RDT_FN", "Iv_M_TP", "Iv_M_FN", 
+    #   "Tv", "notTv", "Tv_D", "Ev_D", "Rv", "EF", "AF", "IF_RDT_TP", "IF_RDT_FN", "IF_M_TP", 
+    #   "IF_M_FN", "TF", "notTF", "RF")    
     
-  # var_namesMosquitos = c("S_Mo", "Ev_Mo", "Iv_Mo", "EF_Mo", "IF_Mo")
-    birth = c(b*.pop)
-    loss_immune = c(eta*IT_ch)
+    # var_namesMosquitos = c("S_Mo", "Ev_Mo", "Iv_Mo", "EF_Mo", "IF_Mo")
+    birth = c(b*N_Hum)
+    loss_immune = c(eta*IT_ch*(1-pV1))
     
-    # death_ch = c(mu*IT_ch, mu*S_ch, mu*Ev_ch, mu_ch_V*Av_ch, mu_ch_V*Iv_RDT_TP_ch, mu_ch_V*Iv_RDT_FN_ch,
-    #              mu_ch_V*Iv_M_TP_ch, mu_ch_V*Iv_M_FN_ch, mu*Tv_ch, mu*notTv_ch, mu*Tv_D_ch, mu*Ev_D_ch, mu*Rv_ch, 
-    #              mu*EF_ch, mu_ch_F*AF_ch, mu_ch_F*IF_RDT_TP_ch, mu_ch_F*IF_RDT_FN_ch, mu_ch_F*IF_M_TP_ch, 
-    #              mu_ch_F*IF_M_FN_ch, mu*TF_ch, mu*notTF_ch, mu*RF_ch)
-    # death_m_wnp_cat = c(mu*IT, mu*S, mu*Ev, mu_V*Av, mu_V*Iv_RDT_TP, mu_V*Iv_RDT_FN,
-    #                 mu_V*Iv_M_TP, mu_V*Iv_M_FN, mu*Tv, mu*notTv, mu*Tv_D, mu*Ev_D, mu*Rv, 
-    #                 mu*EF, mu_F*AF, mu_F*IF_RDT_TP, mu_F*IF_RDT_FN, mu_F*IF_M_TP, 
-    #                 mu_F*IF_M_FN, mu*TF, mu*notTF, mu*RF)
+    vaccination = c(eta*It_ch*pV1, delta1*pDelta1*V1_ch, delta2*pDelta2*v2_ch, delta3*pDelta3*v3_ch, delta4*v4_ch)
+    vaccineToExposed = c(lambda_hum*beta_child*v1_ch, lambda_hum*beta_child*v2_ch, lambda_hum*beta_child*betaV3*v1_ch, lambda_hum*beta_child*betav4*v1_ch, lambda_hum*beta_child*betaVstar*v1_ch)
+    vaccineToSusceptible = c(delta1*(1-pDelta1)*V1_ch, delta2*(1-pDelta2)*v2_ch, delta3*(1-pDelta3)*v3_ch, delta5*vstar_ch)
+    
     
     death_ch = mu*emptyCat_ch
     death_m = mu*emptyCat_m
@@ -519,69 +496,24 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
     death_wnp = mu*emptyCat_wnp
     
     
-    # death_m = suffix_exprs(death_m_wnp_cat, "m")
-    # death_wnp = suffix_exprs(death_m_wnp_cat, "wnp")
-    # death_m_wnp = asvector(sapply(c("m", "wp"), function(cl) paste0(death_m_wnp, "_", cl)))
-    # 
-    # death_wp = c(mu*IT_wp, mu*S_wp, mu*Ev_wp, mu_wp_V*Av_wp, mu_wp_V*Iv_RDT_TP_wp, mu_wp_V*Iv_RDT_FN_wp,
-    #              mu_wp_V*Iv_M_TP_wp, mu_wp_V*Iv_M_FN_wp, mu*Tv_wp, mu*notTv_wp, mu*Tv_D_wp, mu*Ev_D_wp, mu*Rv_wp, 
-    #              mu*EF_wp, mu_wp_F*AF_wp, mu_wp_F*IF_RDT_TP_wp, mu_wp_F*IF_RDT_FN_wp, mu_wp_F*IF_M_TP_wp, 
-    #              mu_wp_F*IF_M_FN_wp, mu*TF_wp, mu*notTF_wp, mu*RF_wp)
-    
     deathMos = c(mu_mos*S_Mo, mu_mos*Ev_Mo, mu_mos*Iv_Mo, mu_mos*EF_Mo, mu_mos*IF_Mo)
     
-    vivaxPath_ch = c(sigma_v*pA_v*Ev_ch, sigma_v*(1 - pA_v)*pTP_RDT*Ev_ch, sigma_v*(1 - pA_v)*pFN_RDT*Ev_ch, sigma_v*(1 - pA_v)*pTP_M*Ev_ch, 
-                  sigma_v*(1 - pA_v)*pFN_RDT*Ev_ch, delta_v*Av_ch, tau*Iv_RDT_TP_ch, tau*Iv_M_TP_ch, delta_v*Iv_RDT_FN_ch, delta_v*Iv_M_FN_ch, 
-                  (1-pCT)*r*Tv_ch, pCT*r*Tv_ch, phi*notTv_ch, (1-pTD)*theta*Tv_D_ch, pTD*theta*Tv_D_ch, smallOmega*pA_v*Ev_ch, 
-                  smallOmega*(1 - pA_v)*pTP_RDT*Ev_ch, smallOmega*(1 - pA_v)*pFN_RDT*Ev_ch, smallOmega*(1 - pA_v)*pTP_M*Ev_ch, 
-                  smallOmega*(1 - pA_v)*pFN_RDT*Ev_ch, rho*Rv_ch, lambda_v*beta_v_ch*S_ch)
+    Path_ch = c(lambda_hum*beta_Child*S_ch, sigma*pC*E_ch, sigma*pU*E_ch, sigma*pTC*E_ch, sigma*pTU*E_ch, sigma*pA*E_ch, tauC*C_ch, tauU*U_ch, rC*pNotTC*Tc_ch, rC*(1-pNotTC)*Tc_ch, 
+                     rU*pNotTU*Tu_ch, rU*(1-pNotTU)*Tu_ch, delta*A, r*R)
     
-    vivaxPath_m = c(sigma_v*pA_v*Ev_m, sigma_v*(1 - pA_v)*pTP_RDT*Ev_m, sigma_v*(1 - pA_v)*pFN_RDT*Ev_m, sigma_v*(1 - pA_v)*pTP_M*Ev_m, 
-                     sigma_v*(1 - pA_v)*pFN_RDT*Ev_m, delta_v*Av_m, tau*Iv_RDT_TP_m, tau*Iv_M_TP_m, delta_v*Iv_RDT_FN_m, delta_v*Iv_M_FN_m, 
-                     (1-pCT)*r*Tv_m, pCT*r*Tv_m, phi*notTv_m, (1-pTD)*theta*Tv_D_m, pTD*theta*Tv_D_m, smallOmega*pA_v*Ev_m, 
-                     smallOmega*(1 - pA_v)*pTP_RDT*Ev_m, smallOmega*(1 - pA_v)*pFN_RDT*Ev_m, smallOmega*(1 - pA_v)*pTP_M*Ev_m, 
-                     smallOmega*(1 - pA_v)*pFN_RDT*Ev_m, rho*Rv_m, lambda_v*S_m)
+    Path_m = c(lambda_hum*S_ch, sigma*pC*E_ch, sigma*pU*E_ch, sigma*pTC*E_ch, sigma*pTU*E_ch, sigma*pA*E_ch, tauC*C_ch, tauU*U_ch, rC*pNotTC*Tc_ch, rC*(1-pNotTC)*Tc_ch, 
+                    rU*pNotTU*Tu_ch, rU*(1-pNotTU)*Tu_ch, delta*A, r*R)
     
-    vivaxPath_wp = c(sigma_v*pA_v*Ev_wp, sigma_v*(1 - pA_v)*pTP_RDT*Ev_wp, sigma_v*(1 - pA_v)*pFN_RDT*Ev_wp, sigma_v*(1 - pA_v)*pTP_M*Ev_wp, 
-                     sigma_v*(1 - pA_v)*pFN_RDT*Ev_wp, delta_v*Av_wp, tau*Iv_RDT_TP_wp, tau*Iv_M_TP_wp, delta_v*Iv_RDT_FN_wp, delta_v*Iv_M_FN_wp, 
-                     (1-pCT)*r*Tv_wp, pCT*r*Tv_wp, phi*notTv_wp, (1-pTD)*theta*Tv_D_wp, pTD*theta*Tv_D_wp, smallOmega*pA_v*Ev_wp, 
-                     smallOmega*(1 - pA_v)*pTP_RDT*Ev_wp, smallOmega*(1 - pA_v)*pFN_RDT*Ev_wp, smallOmega*(1 - pA_v)*pTP_M*Ev_wp, 
-                     smallOmega*(1 - pA_v)*pFN_RDT*Ev_wp, rho*Rv_wp, lambda_v*beta_v_wp*S_wp)
+    Path_wp = c(lambda_hum*beta_Pregnant*S_ch, sigma*pC*E_ch, sigma*pU*E_ch, sigma*pTC*E_ch, sigma*pTU*E_ch, sigma*pA*E_ch, tauC*C_ch, tauU*U_ch, rC*pNotTC*Tc_ch, rC*(1-pNotTC)*Tc_ch, 
+                     rU*pNotTU*Tu_ch, rU*(1-pNotTU)*Tu_ch, delta*A, r*R)
     
-    vivaxPath_wnp = c(sigma_v*pA_v*Ev_wnp, sigma_v*(1 - pA_v)*pTP_RDT*Ev_wnp, sigma_v*(1 - pA_v)*pFN_RDT*Ev_wnp, sigma_v*(1 - pA_v)*pTP_M*Ev_wnp, 
-                     sigma_v*(1 - pA_v)*pFN_RDT*Ev_wnp, delta_v*Av_wnp, tau*Iv_RDT_TP_wnp, tau*Iv_M_TP_wnp, delta_v*Iv_RDT_FN_wnp, delta_v*Iv_M_FN_wnp, 
-                     (1-pCT)*r*Tv_wnp, pCT*r*Tv_wnp, phi*notTv_wnp, (1-pTD)*theta*Tv_D_wnp, pTD*theta*Tv_D_wnp, smallOmega*pA_v*Ev_wnp, 
-                     smallOmega*(1 - pA_v)*pTP_RDT*Ev_wnp, smallOmega*(1 - pA_v)*pFN_RDT*Ev_wnp, smallOmega*(1 - pA_v)*pTP_M*Ev_wnp, 
-                     smallOmega*(1 - pA_v)*pFN_RDT*Ev_wnp, rho*Rv_wnp, lambda_v*S_wnp)
+    Path_wnp = c(lambda_hum*S_ch, sigma*pC*E_ch, sigma*pU*E_ch, sigma*pTC*E_ch, sigma*pTU*E_ch, sigma*pA*E_ch, tauC*C_ch, tauU*U_ch, rC*pNotTC*Tc_ch, rC*(1-pNotTC)*Tc_ch, 
+                      rU*pNotTU*Tu_ch, rU*(1-pNotTU)*Tu_ch, delta*A, r*R)
     
-    
-    
-    falciparumPath_ch = c(lambda_F*beta_F_ch*S_ch, sigma_F*pA_F*EF_ch, sigma_F*(1 - pA_F)*pTP_RDT*EF_ch, sigma_F*(1 - pA_F)*pFN_RDT*EF_ch, sigma_F*(1 - pA_F)*pTP_M*EF_ch, 
-                       sigma_F*(1 - pA_F)*pFN_RDT*EF_ch, tau*IF_RDT_TP_ch, tau*IF_M_TP_ch, delta_F*IF_RDT_FN_ch, delta_F*IF_M_FN_ch, delta_F*AF_ch, 
-                       delta_F*notTF_ch, r*TF_ch, rho*RF_ch) 
-    falciparumPath_m = c(lambda_F*S_m, sigma_F*pA_F*EF_m, sigma_F*(1 - pA_F)*pTP_RDT*EF_m, sigma_F*(1 - pA_F)*pFN_RDT*EF_m, sigma_F*(1 - pA_F)*pTP_M*EF_m, 
-                          sigma_F*(1 - pA_F)*pFN_RDT*EF_m, tau*IF_RDT_TP_m, tau*IF_M_TP_m, delta_F*IF_RDT_FN_m, delta_F*IF_M_FN_m, delta_F*AF_m, 
-                          delta_F*notTF_m, r*TF_m, rho*RF_m)
-    falciparumPath_wp = c(lambda_F*beta_F_wp*S_wp, sigma_F*pA_F*EF_wp, sigma_F*(1 - pA_F)*pTP_RDT*EF_wp, sigma_F*(1 - pA_F)*pFN_RDT*EF_wp, sigma_F*(1 - pA_F)*pTP_M*EF_wp, 
-                          sigma_F*(1 - pA_F)*pFN_RDT*EF_wp, tau*IF_RDT_TP_wp, tau*IF_M_TP_wp, delta_F*IF_RDT_FN_wp, delta_F*IF_M_FN_wp, delta_F*AF_wp, 
-                          delta_F*notTF_wp, r*TF_wp, rho*RF_wp)
-    falciparumPath_wnp = c(lambda_F*S_wnp, sigma_F*pA_F*EF_wnp, sigma_F*(1 - pA_F)*pTP_RDT*EF_wnp, sigma_F*(1 - pA_F)*pFN_RDT*EF_wnp, sigma_F*(1 - pA_F)*pTP_M*EF_wnp, 
-                          sigma_F*(1 - pA_F)*pFN_RDT*EF_wnp, tau*IF_RDT_TP_wnp, tau*IF_M_TP_wnp, delta_F*IF_RDT_FN_wnp, delta_F*IF_M_FN_wnp, delta_F*AF_wnp, 
-                          delta_F*notTF_wnp, r*TF_wnp, rho*RF_wnp)
-    
-    
-    
-    agingToMen = c(a*pMal*S_ch, a*pMal*Ev_ch, a*pMal*Av_ch, a*pMal*Iv_RDT_TP_ch, a*pMal*Iv_RDT_FN_ch,
-                 a*pMal*Iv_M_TP_ch, a*pMal*Iv_M_FN_ch, a*pMal*Tv_ch, a*pMal*notTv_ch, a*pMal*Tv_D_ch, a*pMal*Ev_D_ch, a*pMal*Rv_ch, 
-                 a*pMal*EF_ch, a*pMal*AF_ch, a*pMal*IF_RDT_TP_ch, a*pMal*IF_RDT_FN_ch, a*pMal*IF_M_TP_ch, 
-                 a*pMal*IF_M_FN_ch, a*pMal*TF_ch, a*pMal*notTF_ch, a*pMal*RF_ch)
-    agingToWomen = c(a*(1-pMal)*S_ch, a*(1-pMal)*Ev_ch, a*(1-pMal)*Av_ch, a*(1-pMal)*Iv_RDT_TP_ch, a*(1-pMal)*Iv_RDT_FN_ch,
-                   a*(1-pMal)*Iv_M_TP_ch, a*(1-pMal)*Iv_M_FN_ch, a*(1-pMal)*Tv_ch, a*(1-pMal)*notTv_ch, a*(1-pMal)*Tv_D_ch, a*(1-pMal)*Ev_D_ch, a*(1-pMal)*Rv_ch, 
-                   a*(1-pMal)*EF_ch, a*(1-pMal)*AF_ch, a*(1-pMal)*IF_RDT_TP_ch, a*(1-pMal)*IF_RDT_FN_ch, a*(1-pMal)*IF_M_TP_ch, 
-                   a*(1-pMal)*IF_M_FN_ch, a*(1-pMal)*TF_ch, a*(1-pMal)*notTF_ch, a*(1-pMal)*RF_ch)
-    # compartmentsChildren = c("IT", "S", "Ev", "Av", "Iv_RDT_TP", "Iv_RDT_FN", "Iv_M_TP", "Iv_M_FN", 
-    #   "Tv", "notTv", "Tv_D", "Ev_D", "Rv", "EF", "AF", "IF_RDT_TP", "IF_RDT_FN", "IF_M_TP", 
-    #   "IF_M_FN", "TF", "notTF", "RF") 
+
+    agingToMen = c(a*pMal*S_ch, a*pMal*E_ch, a*pMal*C_ch, a*pMal*U_ch, a*pMal*A_ch, a*pMal*Tc_ch, a*pMal*Tu_ch, a*pMal*R_ch)
+    agingToWomen = c(a*pMal*S_ch, a*pMal*E_ch, a*pMal*C_ch, a*pMal*U_ch, a*pMal*A_ch, a*pMal*Tc_ch, a*pMal*Tu_ch, a*pMal*R_ch)
+
     
     wnpTowp = pregnant*emptyCat_wnp
     wpTownp = notPregnant*emptyCat_wp
@@ -590,52 +522,6 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
     migrationVec = numeric(N*N*85)
     
     replacementIndex = 1
-    
-    
-    # for (i in 1:N)
-    # {
-    #   migrationVector = migrationMatrix[i,]
-    #   
-    #   for (j in 1:(length(emptyCat_ch)/N))
-    #   {
-    #     
-    #     # if (j == 2)
-    #     # {
-    #     #   print(j)
-    #     #   print(emptyCat_ch[((j-1)*N + 1):(j*N)])
-    #     #   print(migrationVector)
-    #     #   print(migrationVector*emptyCat_ch[((j-1)*N + 1):(j*N)])
-    #     # }
-    #     print(c(replacementIndex:(replacementIndex - 1+length(emptyCat_m)/N)))
-    #     
-    # 
-    #     tempMigrate_ch = migrationVector*emptyCat_ch[((j-1)*N + 1):(j*N)]
-    #     migrationVec[replacementIndex:(replacementIndex- 1+length(emptyCat_ch)/N)] = tempMigrate_ch
-    #   }
-    # 
-    #   
-    #   for (j in 1:(length(emptyCat_m)/N))
-    #   {
-    # 
-    #     tempMigrate_m = migrationVector*emptyCat_m[((j-1)*N + 1):(j*N)]
-    #     migrationVec[replacementIndex:(replacementIndex - 1 + length(emptyCat_m)/N)] = tempMigrate_m
-    #   }
-    # 
-    #   for (j in 1:(length(emptyCat_wp)/N))
-    #   {
-    #     tempMigrate_wp = migrationVector*emptyCat_wp[((j-1)*N + 1):(j*N)]
-    #     migrationVec[replacementIndex:(replacementIndex- 1+length(emptyCat_wp)/N)] = tempMigrate_wp
-    #   }
-    # 
-    #   
-    #   for (j in 1:(length(emptyCat_wnp)/N))
-    #   {
-    #     tempMigrate_wnp = migrationVector*emptyCat_wnp[((j-1)*N + 1):(j*N)]
-    #     migrationVec[replacementIndex:(replacementIndex- 1+length(emptyCat_wnp)/N)] = tempMigrate_wnp
-    #   }
-    # 
-    # }
-    #print(migrationVec)
     
     M_ch  <- matrix(emptyCat_ch,  nrow = N, byrow = FALSE)  # N x 22
     M_m   <- matrix(emptyCat_m,   nrow = N, byrow = FALSE)  # N x 21
@@ -651,48 +537,29 @@ malrates <- function(x, input, parameters, distMat, t, ti, scenario) {
     migrationVec <- c(t(migration_block))
     
     
-    additionalMortCompViv_ch = c(Av_ch, Iv_RDT_TP_ch, Iv_M_TP_ch)
-    additionalMortCompFal_ch = c(AF_ch, IF_RDT_TP_ch, IF_M_TP_ch)
+    additionalMortCompViv_ch = c(mu_C*C_ch, mu_U*U_ch, mu_Tc*Tc_ch, mu_Tu*Tu_ch, mu_A*A_ch)
+
     
-    additionalMortCompViv_m = c(Av_m, Iv_RDT_TP_m, Iv_M_TP_m)
-    additionalMortCompFal_m = c(AF_m, IF_RDT_TP_m, IF_M_TP_m)
+    additionalMortCompViv_m = c(mu_C*C_m, mu_U*U_m, mu_Tc*Tc_m, mu_Tu*Tu_m, mu_A*A_m)
+
     
-    additionalMortCompViv_wp = c(Av_wp, Iv_RDT_TP_wp, Iv_M_TP_wp)
-    additionalMortCompFal_wp = c(AF_wp, IF_RDT_TP_wp, IF_M_TP_wp)
+    additionalMortCompViv_wp = c(mu_C*C_wp, mu_U*U_wp, mu_Tc*Tc_wp, mu_Tu*Tu_wp, mu_A*A_wp)
+
     
-    additionalMortCompViv_wnp = c(Av_wnp, Iv_RDT_TP_wnp, Iv_M_TP_wnp)
-    additionalMortCompFal_wnp = c(AF_wnp, IF_RDT_TP_wnp, IF_M_TP_wnp)
-    
-    addMortViv_ch = mu_ch_V*additionalMortCompViv_ch
-    addMortFal_ch = mu_ch_F*additionalMortCompFal_ch
-    
-    addMortViv_m = mu_V*additionalMortCompViv_m
-    addMortFal_m = mu_F*additionalMortCompFal_m
-    
-    addMortViv_wp = mu_wp_V*additionalMortCompViv_wp
-    addMortFal_wp = mu_wp_F*additionalMortCompFal_wp
-    
-    addMortViv_wnp = mu_V*additionalMortCompViv_wnp
-    addMortFal_wnp = mu_F*additionalMortCompFal_wnp
+    additionalMortCompViv_wnp = c(mu_C*C_wnp, mu_U*U_wnp, mu_Tc*Tc_wnp, mu_Tu*Tu_wnp, mu_A*A_wnp)
+
     
     # var_namesMosquitos = c("S_Mo", "Ev_Mo", "Iv_Mo", "EF_Mo", "IF_Mo")
     # Mosquito
     
-    mosMovement = c(b_mos*.popMos, lambda_mos_V*S_Mo, gamma_mos_V*Ev_Mo, 
-                    lambda_mos_F*S_Mo, gamma_mos_F*EF_Mo)
+    mosMovement = c(b_mos*N_Mos, lambda_mos*S_Mo, gamma_mos*E_Mo)
     
     tranrate <- array(c(
-      birth, loss_immune, death_ch, death_m, death_wp, death_wnp, 
-      deathMos, vivaxPath_ch, vivaxPath_m, vivaxPath_wp, vivaxPath_wnp, 
-      falciparumPath_ch, falciparumPath_m, falciparumPath_wp, falciparumPath_wnp, 
-      agingToMen, agingToWomen, wnpTowp, wpTownp, migrationVec, addMortViv_ch,
-      addMortFal_ch, addMortViv_m, addMortFal_m, addMortViv_wp, addMortFal_wp, 
-      addMortViv_wnp, addMortFal_wnp, mosMovement
-      
-      
-      
-
-      ), dim=c(N, A))
+      birth, loss_immune, vaccination, vaccineToExposed, vaccineToSusceptible, 
+      death_ch, death_m, death_wp, death_wnp, deathMos, Path_ch, Path_m, Path_wp, Path_wnp, 
+      agingToMen, agingToWomen, wnpTowp, wpTownp, migrationVec, additionalMortCompViv_ch,
+      additionalMortCompViv_m, additionalMortCompViv_wp, additionalMortCompViv_wnp,   
+      mosMovement), dim=c(N, A))
     tranrate <- c(t(tranrate))
     return(tranrate)
   })
@@ -827,7 +694,7 @@ run_model <- function(parameters, scenario, time, initcondrun) {
   
   
   MALout<-list(#as.data.table(inc_pred_ode), #2
-               outoderun #3
+    outoderun #3
   )
   
   # state_names <- c()
